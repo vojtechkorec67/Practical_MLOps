@@ -140,6 +140,31 @@ Typical flow:
 3. Merge to `main`
 4. Auto-deploy to Azure from `main`
 
+## End-to-End Process (Step by Step)
+
+This is the exact practical sequence used in this repository:
+
+1. Update code locally.
+2. (Optional but recommended) validate locally with `make all`.
+3. Push to `staging` branch:
+    ```bash
+    git checkout staging
+    git add .
+    git commit -m "your change"
+    git push origin staging
+    ```
+4. GitHub triggers `load-test.yml` on staging.
+5. Review load-test workflow result and artifacts in GitHub Actions.
+6. If staging checks are OK, merge `staging` into `main`.
+7. Push/merge to `main` triggers:
+    - `python-app.yml` (install/lint/test matrix),
+    - `docker-publish.yml` (build + push container + deploy).
+8. Docker image is built and pushed to GHCR with unique tag `sha-<commit>`.
+9. Azure App Service is updated to that exact SHA image tag.
+10. Validate production endpoints:
+     - `/health`
+     - `/add?x=5&y=3`
+
 ---
 
 ## GitHub Actions Workflows
