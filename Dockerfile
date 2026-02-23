@@ -7,6 +7,7 @@ RUN pip install --upgrade pip && \
     pip install -r requirements.txt
 
 COPY hello.py .
+COPY app.py .
 COPY test_hello.py .
 
-CMD ["python", "hello.py"]
+CMD ["python", "app.py"]
