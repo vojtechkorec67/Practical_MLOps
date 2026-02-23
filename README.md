@@ -1,82 +1,239 @@
 # Practical MLOps
 
-A Python project demonstrating best practices in MLOps including testing, linting, and CI/CD with GitHub Actions.
+Simple Python MLOps training project with:
+- unit tests + linting,
+- CI in GitHub Actions,
+- container build/push to GHCR,
+- load testing on `staging`,
+- continuous deployment of container image to Azure App Service.
+
+## What This Repository Demonstrates
+
+This repository is intentionally small, but it covers the full DevOps/MLOps flow:
+
+1. **Code quality checks** (`make lint`)
+2. **Unit tests + coverage** (`make test`)
+3. **Containerization** (Docker image in GHCR)
+4. **Branch-based automation** (`main` vs `staging`)
+5. **Load testing** (Locust on staging branch)
+6. **Automatic deployment** (Azure App Service on push to main)
+
+---
 
 ## Project Structure
 
-```
+```text
 Practical_MLOps/
-├── hello.py              # Main application code
-├── test_hello.py         # Unit tests
-├── requirements.txt      # Python dependencies
-├── Makefile              # Build automation
-├── .gitignore            # Git ignore rules
-└── .github/
-    └── workflows/
-        └── python-app.yml   # GitHub Actions CI/CD
+├── hello.py                          # Core function: add(x, y)
+├── app.py                            # Flask API exposing /health and /add
+├── test_hello.py                     # Unit tests for hello.add
+├── locustfile.py                     # Load test scenario for API endpoints
+├── requirements.txt                  # Python dependencies
+├── Makefile                          # Local automation commands
+├── Dockerfile                        # Container build definition
+└── .github/workflows/
+        ├── python-app.yml                # CI: lint + tests on pushes
+        ├── docker-publish.yml            # Build/push image + deploy to Azure
+        └── load-test.yml                 # Load test on staging branch
 ```
 
-## Setup
+---
+
+## Application Endpoints
+
+The API is served by `app.py`:
+
+- `GET /health`
+    - Returns service health.
+    - Example response: `{"status":"healthy"}`
+
+- `GET /add?x=5&y=3`
+    - Returns addition result.
+    - Example response: `{"x":5.0,"y":3.0,"result":8.0}`
+
+---
+
+## Local Setup
 
 ### Prerequisites
-- Python 3.13+
-- pip
+- Python 3.10+
+- `pip`
+- (optional) Docker
 
-### Installation
-
-1. Clone the repository:
+### 1) Clone project
 ```bash
 git clone https://github.com/vojtechkorec67/Practical_MLOps.git
 cd Practical_MLOps
 ```
 
-2. Create and activate virtual environment:
+### 2) Create virtual environment
 ```bash
 python3 -m venv ~/.Practical_MLOps
 source ~/.Practical_MLOps/bin/activate
 ```
 
-3. Install dependencies:
+### 3) Install dependencies
 ```bash
 make install
 ```
 
-## Usage
+---
 
-### Run all checks (install, lint, test)
+## Makefile Commands
+
 ```bash
-make all
+make all      # install + lint + test
+make install  # install dependencies from requirements.txt
+make lint     # run pylint on hello.py
+make test     # run pytest with coverage
 ```
 
-### Run individual commands
+---
+
+## Local API Run
+
+Run locally:
 ```bash
-make install    # Install dependencies
-make lint       # Run pylint checks
-make test       # Run pytest with coverage
+python app.py
 ```
 
-## Testing
-
-Tests are run with pytest and include coverage reporting:
+Test endpoints:
 ```bash
-python -m pytest -vv --cov=hello test_hello.py
+curl -i http://localhost:5000/health
+curl -i "http://localhost:5000/add?x=5&y=3"
 ```
 
-## Linting
+---
 
-Code quality checks with pylint:
+## Docker
+
+Build image locally:
 ```bash
-pylint --disable=R,C hello.py
+docker build -t practical-mlops:local .
 ```
 
-## CI/CD
+Run container locally:
+```bash
+docker run --rm -p 5000:5000 practical-mlops:local
+```
 
-This project uses GitHub Actions for continuous integration. Every push to `main` or `develop` branches automatically runs:
-- Dependency installation
-- Code linting
-- Unit tests with coverage
+Test API from host:
+```bash
+curl -i http://localhost:5000/health
+```
 
-See `.github/workflows/python-app.yml` for configuration.
+---
+
+## Branch Strategy
+
+- **`main` branch**
+    - Primary branch.
+    - Triggers CI + container build + Azure deployment.
+
+- **`staging` branch**
+    - Performance validation branch.
+    - Triggers Locust load test workflow.
+
+Typical flow:
+1. Push feature changes to `staging`
+2. Verify load-test results
+3. Merge to `main`
+4. Auto-deploy to Azure from `main`
+
+---
+
+## GitHub Actions Workflows
+
+### 1) `python-app.yml` (CI)
+Triggered on push. Runs matrix tests on Python `3.10`, `3.11`, `3.13`:
+- install dependencies (`make install`)
+- lint (`make lint`)
+- unit tests with coverage (`make test`)
+
+### 2) `docker-publish.yml` (Build + Deploy)
+Triggered on push/PR to `main`:
+- builds Docker image,
+- pushes image to **GitHub Container Registry** (`ghcr.io/vojtechkorec67/practical_mlops`),
+- uses unique image tag `sha-<commit>`,
+- on push to `main` deploys that exact tag to Azure App Service.
+
+### 3) `load-test.yml` (Performance on Staging)
+Triggered on push/PR to `staging`:
+- starts API app,
+- runs Locust headless test,
+- stores CSV metrics as workflow artifact.
+
+---
+
+## Container Registry (GHCR)
+
+Container images are published to:
+```text
+ghcr.io/vojtechkorec67/practical_mlops
+```
+
+Image tags include:
+- branch tags,
+- SHA-based immutable tags (`sha-...`).
+
+SHA tags are used for reliable, traceable deployments.
+
+---
+
+## Azure Deployment
+
+Application is deployed to Azure App Service (Linux, container-based).
+
+Current app URL format:
+```text
+https://<app-name>.azurewebsites.net
+```
+
+Deployment workflow uses GitHub secret:
+- `AZURE_WEBAPP_PUBLISH_PROFILE`
+
+How it works:
+1. GitHub Actions builds and pushes image tag `sha-<commit>`.
+2. Deploy step points App Service to that exact image tag.
+3. Azure runs that container version.
+
+You can verify active deployed image via CLI:
+```bash
+az webapp show \
+    --name practical-mlops \
+    --resource-group practical-mlops_group \
+    --query "siteConfig.linuxFxVersion" \
+    -o tsv
+```
+
+---
+
+## Load Testing Details
+
+Locust scenario in `locustfile.py`:
+- weighted traffic to `/add` and `/health`,
+- simulated concurrent users,
+- request-level metrics exported to CSV.
+
+This is used as a branch gate before promoting to main.
+
+---
+
+## Troubleshooting Quick Notes
+
+- If Azure does not update after new image:
+    - check latest `docker-publish.yml` run is green,
+    - verify deployed tag in `siteConfig.linuxFxVersion`.
+
+- If deployment auth fails:
+    - re-download publish profile,
+    - update `AZURE_WEBAPP_PUBLISH_PROFILE` GitHub secret.
+
+- If API endpoint fails:
+    - check App Service logs (`Log stream`),
+    - verify container image/tag exists in GHCR.
+
+---
 
 ## License
 
