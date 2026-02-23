@@ -56,21 +56,9 @@ jobs:
     needs: build-and-push
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
-      - name: Azure login
-        uses: azure/login@v2
+      - name: Deploy container to Azure Web App
+        uses: azure/webapps-deploy@v3
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      - name: Configure container image
-        run: |
-          az webapp config container set \
-            --name "$AZURE_WEBAPP_NAME" \
-            --resource-group "$AZURE_RESOURCE_GROUP" \
-            --container-image-name "$IMAGE_NAME:sha-${GITHUB_SHA}" \
-            --container-registry-url https://ghcr.io
-
-      - name: Restart app service
-        run: |
-          az webapp restart \
-            --name "$AZURE_WEBAPP_NAME" \
-            --resource-group "$AZURE_RESOURCE_GROUP"
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          images: ${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
